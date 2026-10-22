@@ -1,0 +1,17 @@
+{
+  "name": "therapezy",
+  "version": "1.0.0",
+  "description": "Swipe-style psychologist discovery with matching preferences, real-time chat and clinic booking integration",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning src/server.js",
+    "dev": "node --no-warnings=ExperimentalWarning --watch src/server.js",
+    "reset": "rm -f data/therapezy.db*"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  }
+}

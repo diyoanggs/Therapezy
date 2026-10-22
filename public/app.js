@@ -87,6 +87,10 @@ function setTop(title, { back, actions } = {}) {
     back ? h('button', { class: 'icon-btn', 'aria-label': 'Back', onclick: () => (history.length > 1 ? history.back() : go(back)) }, '←') : null,
     h('h1', null, title === 'Therapezy' ? h('span', { class: 'logo' }, 'Therapezy') : title),
     actions || null,
+    // Account shortcut on every top-level screen.
+    state.user && !back && title !== 'Account'
+      ? h('a', { href: '#/account', class: 'account-btn', 'aria-label': 'Account settings', title: 'Account' }, avatar({ name: state.user.name }, 36))
+      : null,
   );
 }
 
@@ -96,7 +100,7 @@ function renderTabs() {
   const route = location.hash.split('/')[1] || '';
   const tabs = state.user.role === 'client'
     ? [['discover', '🔥', 'Discover'], ['shortlist', '💛', 'Shortlist'], ['messages', '💬', 'Messages'], ['bookings', '📅', 'Bookings'], ['preferences', '⚙️', 'Filters']]
-    : [['messages', '💬', 'Messages'], ['bookings', '📅', 'Bookings'], ['my-profile', '🪪', 'My profile'], ['account', '👤', 'Account']];
+    : [['messages', '💬', 'Messages'], ['bookings', '📅', 'Bookings'], ['my-profile', '🪪', 'My profile']];
   nav.replaceChildren(...tabs.map(([r, ic, label]) => h('a', { href: `#/${r}`, class: route === r || (r === 'messages' && route === 'chat') ? 'on' : '' },
     h('span', { class: 'ic' }, ic), label, r === 'messages' && state.unread ? h('span', { class: 'badge' }, state.unread) : null)));
 }
@@ -548,9 +552,68 @@ async function myProfileView(root) {
 }
 
 function accountView(root) {
-  setTop('Account');
-  mount(root, h('div', { class: 'card-box' }, h('h2', null, state.user.name), h('p', { class: 'muted' }, state.user.email, ' · ', state.user.role),
-    h('button', { class: 'btn secondary', onclick: () => signOut() }, 'Sign out')), crisisNote());
+  setTop('Account', { back: state.user.role === 'client' ? '#/discover' : '#/messages' });
+  const u = state.user;
+  const pwInput = (placeholder, autocomplete = 'current-password') => h('input', { type: 'password', placeholder, autocomplete });
+  // Run a form action with a button busy state and an inline error line.
+  const action = (btn, errEl, fn) => async e => {
+    e?.preventDefault(); errEl.textContent = ''; btn.disabled = true;
+    try { await fn(); } catch (ex) { errEl.textContent = ex.message; } finally { btn.disabled = false; }
+  };
+
+  // Details
+  const name = h('input', { type: 'text', value: u.name, autocomplete: 'name' });
+  const email = h('input', { type: 'email', value: u.email, autocomplete: 'email' });
+  const emailPw = pwInput('Current password');
+  const emailPwField = field('Current password (needed to change email)', emailPw);
+  emailPwField.hidden = true;
+  email.addEventListener('input', () => { emailPwField.hidden = email.value.trim().toLowerCase() === u.email.toLowerCase(); });
+  const detailsErr = h('p', { class: 'error' }), detailsBtn = h('button', { class: 'btn', type: 'submit' }, 'Save details');
+  const details = h('form', { class: 'card-box', onsubmit: action(detailsBtn, detailsErr, async () => {
+    const r = await api('/api/account', { method: 'PUT', body: { name: name.value, email: email.value, currentPassword: emailPw.value } });
+    state.user = r.user; emailPw.value = ''; toast('Details saved'); accountView(root);
+  }) }, h('h2', null, 'Your details'), field('Name', name), field('Email', email), emailPwField, detailsErr, detailsBtn);
+
+  // Password
+  const cur = pwInput('Current password'), next = pwInput('At least 8 characters', 'new-password'), confirm = pwInput('Repeat new password', 'new-password');
+  const pwErr = h('p', { class: 'error' }), pwBtn = h('button', { class: 'btn', type: 'submit' }, 'Change password');
+  const password = h('form', { class: 'card-box', onsubmit: action(pwBtn, pwErr, async () => {
+    if (next.value !== confirm.value) throw new Error('New passwords don’t match');
+    await api('/api/account/password', { method: 'PUT', body: { currentPassword: cur.value, newPassword: next.value } });
+    cur.value = next.value = confirm.value = ''; toast('Password changed — other devices signed out');
+  }) }, h('h2', null, 'Password'), field('Current password', cur), field('New password', next), field('Confirm new password', confirm), pwErr, pwBtn);
+
+  // Sessions
+  const sessions = h('div', { class: 'card-box' }, h('h2', null, 'Sign out'),
+    h('div', { class: 'row wrap' },
+      h('button', { class: 'btn secondary', onclick: () => signOut() }, 'Sign out'),
+      h('button', { class: 'btn ghost', onclick: async () => {
+        if (!window.confirm('Sign out on every device, including this one?')) return;
+        await api('/api/auth/logout-all', { method: 'POST' }); signOut(false);
+      } }, 'Sign out of all devices')));
+
+  // Delete
+  const delPw = pwInput('Your password'), delErr = h('p', { class: 'error' });
+  const delBtn = h('button', { class: 'btn danger', type: 'submit' }, 'Delete my account');
+  const danger = h('form', { class: 'card-box danger-zone', onsubmit: action(delBtn, delErr, async () => {
+    if (!window.confirm('Permanently delete your account? This cannot be undone.')) return;
+    await api('/api/account', { method: 'DELETE', body: { password: delPw.value } });
+    toast('Your account has been deleted'); signOut(false);
+  }) }, h('h2', null, 'Delete account'),
+    h('p', { class: 'muted small', style: 'margin-top:0' }, u.role === 'client'
+      ? 'Permanently removes your account, preferences, shortlist, messages and booking history from Therapezy. Sessions already booked with a clinic stay in their system — contact the clinic to cancel.'
+      : 'Permanently removes your account, public profile, messages and booking history from Therapezy. Bookings already made stay in your clinic system.'),
+    field('Confirm with your password', delPw), delErr, delBtn);
+
+  mount(root,
+    h('div', { class: 'card-box row' }, avatar({ name: u.name }, 56),
+      h('div', { style: 'min-width:0' }, h('div', { class: 't', style: 'font-weight:700;font-size:17px' }, u.name),
+        h('div', { class: 'muted small' }, u.email), h('span', { class: 'tag', style: 'margin-top:4px' }, u.role === 'client' ? 'Client' : 'Psychologist'))),
+    u.role === 'psychologist' ? h('a', { class: 'list-item', href: '#/my-profile' }, h('span', { style: 'font-size:22px' }, '🪪'),
+      h('div', null, h('div', { class: 't' }, 'Edit public profile'), h('div', { class: 's' }, 'Bio, focus areas, clinic and booking setup')), h('span', { class: 'meta' }, '›'))
+      : h('a', { class: 'list-item', href: '#/preferences' }, h('span', { style: 'font-size:22px' }, '⚙️'),
+      h('div', null, h('div', { class: 't' }, 'Matching preferences'), h('div', { class: 's' }, 'Who you see when you swipe')), h('span', { class: 'meta' }, '›')),
+    details, password, sessions, danger, crisisNote());
 }
 
 // ---------- session + router ----------

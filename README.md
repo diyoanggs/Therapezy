@@ -46,6 +46,12 @@ The first time it starts, it fills the database with 16 fictional psychologists 
 - A "Show my profile to clients" toggle. Profiles are hidden until it's switched on.
 - A choice of booking integration, with a **Test connection** button.
 
+**Account (both roles)**: tap your avatar in the top bar to:
+- Edit your name and email. Changing your email asks for your current password.
+- Change your password. This signs you out on every other device.
+- Sign out, or sign out of all devices.
+- Permanently delete your account and all your data.
+
 **Messaging**
 - Real-time chat over WebSockets, with typing indicators, unread badges and read receipts.
 - Booking confirmations appear in the chat thread for both sides.

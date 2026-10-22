@@ -22,7 +22,7 @@ app.use(express.static(join(dirname(fileURLToPath(import.meta.url)), '..', 'publ
 app.use('/mock-clinic', mockClinic);
 
 // Wrap async handlers so thrown errors become JSON responses.
-const h = fn => (req, res) => Promise.resolve(fn(req, res)).catch(err => {
+const h = fn => (req, res) => Promise.resolve().then(() => fn(req, res)).catch(err => {
   res.status(err.status || 400).json({ error: err.message || 'Something went wrong' });
 });
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -87,11 +87,53 @@ app.post('/api/auth/login', h((req, res) => {
 }));
 
 app.post('/api/auth/logout', requireAuth, (req, res) => {
-  db.prepare('DELETE FROM sessions WHERE token = ?').run(req.headers.authorization.replace(/^Bearer\s+/i, ''));
+  db.prepare('DELETE FROM sessions WHERE token = ?').run(bearer(req));
   res.json({ ok: true });
 });
 
 app.get('/api/me', requireAuth, (req, res) => res.json({ user: req.user }));
+
+// ---------- account management ----------
+const bearer = req => req.headers.authorization.replace(/^Bearer\s+/i, '');
+function checkPassword(userId, password) {
+  const { pass_hash } = db.prepare('SELECT pass_hash FROM users WHERE id = ?').get(userId);
+  if (!verifyPassword(String(password || ''), pass_hash)) throw fail(403, 'Current password is incorrect');
+}
+
+app.put('/api/account', requireAuth, h((req, res) => {
+  const name = str(req.body.name, 80);
+  const email = str(req.body.email, 120).toLowerCase();
+  if (!name) throw fail(400, 'Enter your name');
+  if (!/^\S+@\S+\.\S+$/.test(email)) throw fail(400, 'Enter a valid email');
+  if (email !== req.user.email.toLowerCase()) {
+    checkPassword(req.user.id, req.body.currentPassword);
+    if (db.prepare('SELECT 1 FROM users WHERE email = ? AND id != ?').get(email, req.user.id)) throw fail(409, 'That email is already in use');
+  }
+  db.prepare('UPDATE users SET name = ?, email = ? WHERE id = ?').run(name, email, req.user.id);
+  res.json({ user: { ...req.user, name, email } });
+}));
+
+app.put('/api/account/password', requireAuth, h((req, res) => {
+  const next = String(req.body.newPassword || '');
+  checkPassword(req.user.id, req.body.currentPassword);
+  if (next.length < 8) throw fail(400, 'New password must be at least 8 characters');
+  db.prepare('UPDATE users SET pass_hash = ? WHERE id = ?').run(hashPassword(next), req.user.id);
+  // Changing the password signs out every other device.
+  db.prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?').run(req.user.id, bearer(req));
+  res.json({ ok: true });
+}));
+
+app.post('/api/auth/logout-all', requireAuth, (req, res) => {
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(req.user.id);
+  res.json({ ok: true });
+});
+
+app.delete('/api/account', requireAuth, h((req, res) => {
+  checkPassword(req.user.id, req.body.password);
+  // Cascades remove the profile, preferences, swipes, conversations and bookings.
+  db.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
+  res.json({ ok: true });
+}));
 app.get('/api/options', (req, res) => res.json(OPTIONS));
 
 // ---------- psychologist: own profile ----------
@@ -333,6 +375,8 @@ app.get('/api/bookings', requireAuth, (req, res) => {
 });
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
+// Last-resort handler (e.g. malformed JSON bodies): never leak stack traces.
+app.use((err, req, res, next) => res.status(err.status || 500).json({ error: err.status ? err.message : 'Something went wrong' }));
 
 // ---------- realtime ----------
 const server = createServer(app);

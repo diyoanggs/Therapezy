@@ -2,7 +2,17 @@
 
 A swipe-style app for finding a psychologist. Clients swipe through profiles filtered by their preferences, message psychologists in real time and book sessions directly into the clinic's booking system. Psychologists create and manage their own profiles.
 
-## Quick start
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/diyoanggs/Therapezy)
+
+## Deploy
+
+**Render (one click):** press the button above, sign in to Render, and click **Apply**. The `render.yaml` blueprint builds the `Dockerfile` and serves the app at `https://<service-name>.onrender.com`, with WebSockets for chat. The demo data is created automatically.
+
+- On the **free** plan the service sleeps after about 15 minutes idle. The first request after that takes around 30 seconds, and the SQLite database is wiped, so the demo data is recreated. That's fine for a demo but not for real users.
+- To keep data, switch to `plan: starter` in `render.yaml` and uncomment the `disk` block. The database lives at `/data/therapezy.db`.
+- The `Dockerfile` also runs on any container host (Fly.io, Railway, Google Cloud Run, a VPS). Mount a volume at `/data` to keep the database. If the host doesn't tell the app its public URL, set `BASE_URL` to it.
+
+## Quick start (local)
 
 ```bash
 npm install

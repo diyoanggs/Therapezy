@@ -11,7 +11,8 @@ import { mockClinic } from './mockClinic.js';
 import { seedIfEmpty } from './seed.js';
 
 const PORT = Number(process.env.PORT || 3000);
-const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+// Public URL of this deployment (Render sets RENDER_EXTERNAL_URL automatically).
+const BASE_URL = (process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
 if (seedIfEmpty(BASE_URL)) console.log('Seeded demo data (password for all demo accounts: demo1234)');
 
 const app = express();

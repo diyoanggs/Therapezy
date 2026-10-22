@@ -1,0 +1,15 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: therapezy
+    runtime: docker
+    plan: free            # free instances sleep when idle and lose the SQLite data; see README
+    healthCheckPath: /api/options
+    envVars:
+      - key: NODE_ENV
+        value: production
+    # For data that persists, switch to plan: starter and uncomment:
+    # disk:
+    #   name: therapezy-data
+    #   mountPath: /data
+    #   sizeGB: 1
